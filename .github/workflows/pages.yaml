@@ -1,0 +1,54 @@
+name: Pages
+
+# Builds the site and publishes it to GitHub Pages. The upstream repository is
+# checked out at the commit the content was translated from, so the build
+# checks links and sources against exactly that version.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # Actions are pinned to commits; a moved tag cannot change what runs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Read the upstream commit
+        id: upstream
+        run: |
+          commit="$(sed -n 's/^  upstream: "\([0-9a-f]\{40\}\)",$/\1/p' site.config.mjs)"
+          [ -n "$commit" ] || { echo "::error::no upstream commit in site.config.mjs"; exit 1; }
+          echo "commit=${commit}" >>"$GITHUB_OUTPUT"
+      - name: Check out upstream at that commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: pingdotgg/t3code
+          ref: ${{ steps.upstream.outputs.commit }}
+          path: upstream
+          persist-credentials: false
+      - name: Build
+        run: T3CODE_REPO="$PWD/upstream" node build.mjs
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
